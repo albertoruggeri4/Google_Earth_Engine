@@ -1,0 +1,401 @@
+// Load Landsat 8 surface reflectance data    #CARICAMENTO IMMAGINI DA LANDSAT 8
+var l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR');
+
+// Function to cloud mask from the Fmask band of Landsat 8 SR data.  # RIMOZIONE NUVOLE
+function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = ee.Number(2).pow(3).int();
+  var cloudsBitMask = ee.Number(2).pow(5).int();
+
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+      .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+
+  // Return the masked image, scaled to [0, 1].
+  return image.updateMask(mask).divide(10000);
+}
+
+// Map the function over one year of data and take the median. #SELEZIONE PERIODO DI TEMPO
+var image = l8sr.filterDate('2019-01-01', '2019-12-31')
+                    .map(maskL8sr)
+                    .median().clip(aoi);
+
+#AVREMO ORA NELLA SEZIONE LAYERS LE IMMAGINI DA LANDSAT 8 SENZA NUVOLE
+#2° immagine è al vicino infrarosso, più scuro dove ci sono più piante (clorofilla
+
+// Display the results.
+Map.addLayer(image, {bands: ['B4', 'B3', 'B2'], min: 0, max: 0.3}, 'image L8 true col');
+
+Map.addLayer(image, {bands: ['B5', 'B4', 'B3'], min: 0, max: 0.3}, 'image L8 false col');
+
+
+
+///// create traing set
+var newfc = urban.merge(vegetation).merge(water).merge(tree);
+// print(newfc);
+//Map.setCenter(11.9383, 45.4051,12);
+
+
+// extract L8 reflectances
+var bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'];
+var training = image.select(bands).sampleRegions({
+  collection: newfc, 
+  properties: ['landcover'], 
+  scale: 30
+});
+// print(training)
+
+
+
+###classificatore ad albero (randomForest) più alto è il numero di alberi 
+#più alta sarà la qualità della risoluzione (useremo le bande sotto i poligoni disegnati per la classificazione)
+// CLASSIFIER:
+var classifier = ee.Classifier.randomForest(30).train({
+  features: training, 
+  classProperty: 'landcover', 
+  inputProperties: bands,
+});
+
+
+
+var classified1 = image.classify(classifier);
+var CL8 = classified1
+
+Map.addLayer(classified1, {min: 0, max: 3, palette: ['red', 'yellow', 'blue','228B22']}, 'Random Forest L8');
+
+Export.image.toDrive({
+  image: classified1,
+  description: 'classifiedL8',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+
+
+
+Export.image.toAsset({
+  image: classified1,
+  description: 'classifiedL8',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+
+
+Export.image.toDrive({
+  image: image.select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7']),
+  description: 'image_L8',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+
+
+
+
+
+
+
+/////////////////////
+
+//////////  Landsat 4
+
+
+/////////////////////
+
+
+
+var water = water2, tree = tree2, urban = urban2, vegetation = vegetation2, aoi = aoi2;
+          
+          
+          
+
+          
+// Load Landsat 8 surface reflectance data
+var l4sr = ee.ImageCollection('LANDSAT/LT04/C01/T1_SR');
+
+###maskL8sr rimuove le nuvole
+// Function to cloud mask from the Fmask band of Landsat 4 SR data.
+function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = ee.Number(2).pow(3).int();
+  var cloudsBitMask = ee.Number(2).pow(5).int();
+
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+      .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+
+  // Return the masked image, scaled to [0, 1].
+  return image.updateMask(mask).divide(10000);
+}
+
+// Map the function over one year of data and take the median.
+var image = l4sr.filterDate('1988-01-01', '1991-12-31')
+                    .map(maskL8sr)
+                    .median().clip(aoi);
+
+// Display the results.
+Map.addLayer(image, {bands: ['B3', 'B2', 'B1'], min: 0, max: 0.3}, 'image L4 true col');
+Map.addLayer(image, {bands: ['B4', 'B3', 'B2'], min: 0, max: 0.3}, 'image L4 false col');
+
+var newfc = urban.merge(vegetation).merge(water).merge(tree);
+// print(newfc);
+Map.setCenter(11.9383, 45.4051,12);
+
+var bands = ['B1','B2', 'B3', 'B4', 'B5', 'B7'];
+
+var training = image.select(bands).sampleRegions({
+  collection: newfc, 
+  properties: ['landcover'], 
+  scale: 30
+});
+// print(training)
+
+
+// CLASSIFIERS:
+var classifier = ee.Classifier.randomForest(30).train({
+  features: training, 
+  classProperty: 'landcover', 
+  inputProperties: bands,
+});
+
+
+var classified1 = image.classify(classifier);
+
+Map.addLayer(classified1, {min: 0, max: 3, palette: ['red', 'yellow', 'blue','228B22']}, 'Random Forest');
+
+var CL4 = classified1
+
+Export.image.toDrive({
+  image: classified1,
+  description: 'classified90',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+
+
+Export.image.toAsset({
+  image: classified1,
+  description: 'classifiedL4',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+Export.image.toDrive({
+  image: image.select(['B1','B2', 'B3', 'B4', 'B5', 'B7']),
+  description: 'image_L4',
+  region: aoi,
+  scale: 30,
+  maxPixels: 1e13,
+});
+
+
+
+
+
+
+
+//Area Calculation 
+var names = ['Builtup', 'Cropland','Water', 'Vegetation']
+var count = CL8.eq([0,1,2,3]).rename(names);
+var total = count.multiply(ee.Image.pixelArea()).divide(1000*1000);
+var affected_area = total.reduceRegion({
+reducer:ee.Reducer.sum(),
+  geometry:aoi,
+  scale:100,
+maxPixels: 1e11,
+bestEffort:true
+});
+var area_pxa = ee.Number(affected_area)
+print ('Area in km2 L8:', area_pxa)
+
+//Area Calculation 
+var names = ['Builtup', 'Cropland','Water', 'Vegetation']
+var count = CL4.eq([0,1,2,3]).rename(names);
+var total = count.multiply(ee.Image.pixelArea()).divide(1000*1000);
+var affected_area = total.reduceRegion({
+reducer:ee.Reducer.sum(),
+  geometry:aoi,
+  scale:100,
+maxPixels: 1e11,
+bestEffort:true
+});
+var area_pxa = ee.Number(affected_area)
+print ('Area in km2 L4:', area_pxa)
+// Refine new urban result using Sentinel-2 classified dataset
+
+var NewUrban = CL8.updateMask(CL8.eq(0)).updateMask(CL4.gt(0));
+
+
+Map.addLayer(NewUrban,{min: 0, max: 1},'NewUrban')
+
+      
+// Compute connectivity of pixels to eliminate those connected to 8 or fewer neighbours
+// This operation reduces noise of the new urban extent product 
+var connections = NewUrban.connectedPixelCount();    
+var NewUrban = NewUrban.updateMask(connections.gte(8));
+
+#Col nuovo new urban è un layer pulito dal rumore, ovvero indica solo le zone con px contigui (nel nostro caso abbiamo messo almeno 8px contigui)
+#Sulla console è possibile vedere i dati statistici
+
+Map.addLayer(NewUrban,{min: 0, max: 1},'NewUrban')
+
+//-------------------Damage Assessment---------------------//
+
+
+var LULC_affected = CL4
+  .updateMask(NewUrban.eq(0));
+  
+// Affected LULC
+Map.addLayer(LULC_affected, {min: 1, max: 3, palette:  [ 'yellow', 'blue','228B22']}, 'Affected LULC'); 
+
+
+// Convert new urban raster to polygons
+var NewUrban_vec = NewUrban.reduceToVectors({
+  scale: 10,
+  geometryType:'polygon',
+  geometry: aoi,
+  eightConnected: false,
+  bestEffort:true,
+  tileScale:2,
+});
+
+
+// new urbaned Area//
+var NewUrban_pixelarea = NewUrban.eq([0]).rename('NewUrban')
+  .multiply(ee.Image.pixelArea());
+
+// Sum the areas of new urbaned pixels
+var NewUrban_stats = NewUrban_pixelarea.reduceRegion({
+  reducer: ee.Reducer.sum(),              
+  geometry: aoi,
+  scale: 30, // native resolution 
+  maxPixels: 1e11
+  //bestEffort: true
+  });
+// Convert the new urban extent to sq.km (area calculations are originally given in meters)  
+var NewUrban_stats_ha = NewUrban_stats
+ .getNumber('NewUrban')
+  .divide(1000*1000)
+print ('NewUrban Area in km2:', NewUrban_stats_ha)
+
+
+//Damage Area Calculation
+var aff_name = ['Cropland','Water', 'Vegetation']
+var aff_count = LULC_affected.eq([1,2,3]).rename(aff_name);
+var aff_total = aff_count.multiply(ee.Image.pixelArea()).divide(1000*1000);
+var affected_area = aff_total.reduceRegion({
+reducer:ee.Reducer.sum(),
+  geometry:aoi,
+  scale:30,
+maxPixels: 1e11
+//bestEffort:true
+});
+var area_aff = ee.Number(affected_area)
+print ('Affected Area in km2:', area_aff)
+
+
+######Viene caricata sopra l'immagine con il Global Human Settlmente layer
+#Mostra in rosso quelle che non erano urbane nel 1990 e lo sono diventate nel 2015
+/////7 GHSL section
+
+var Built = GHSL.select('built').clip(aoi)
+
+
+Map.addLayer(Built,{min:1, max:6},'GHSL')
+
+var NewBuiltGHSL = Built.updateMask(Built.eq(4).or(Built.eq(3)))
+
+NewBuiltGHSL = NewBuiltGHSL.where(NewBuiltGHSL,1)
+
+Map.addLayer(NewBuiltGHSL,{palette:['red']},'NewBuiltGHSL')
+
+// new urbaned Area//
+var NewUrban_pixelarea = NewBuiltGHSL.eq([1]).rename('NewUrban')
+  .multiply(ee.Image.pixelArea());
+
+// Sum the areas of new urbaned pixels
+var NewUrban_stats = NewUrban_pixelarea.reduceRegion({
+  reducer: ee.Reducer.sum(),              
+  geometry: aoi,
+  scale: 30, // native resolution 
+  maxPixels: 1e11
+  //bestEffort: true
+  });
+// Convert the new urban extent to sq.km (area calculations are originally given in meters)  
+var NewUrban_stats_ha = NewUrban_stats
+ .getNumber('NewUrban')
+  .divide(1000*1000)
+print ('NewUrban GHSL Area in km2:', NewUrban_stats_ha)
+
+
+
+//-------------------Downlaod GeoTiff and Shapefiles---------------------//
+
+
+
+//Download new urbaned image
+Export.image.toDrive({
+  image: NewUrban,
+  description: 'NewUrban_image',
+  region: aoi,
+  scale: 10,
+  maxPixels: 1e9,
+});
+
+//Download Affected Classified image
+Export.image.toDrive({
+  image: LULC_affected,
+  description: 'Affected_LULC',
+  region: aoi,
+  scale: 10,
+  maxPixels: 1e9,
+});
+
+// Export new urban polygons as shape-file
+Export.table.toDrive({
+  collection:NewUrban_vec,
+  description:'NewUrban_extent_vector',
+  fileFormat:'SHP',
+  fileNamePrefix:'NewUrban_vec'
+});
+
+
+
+
+
+
+//////////////////////////
+
+##### 
+// accuracy assessment for L4
+
+var training = training.randomColumn()
+  
+  
+var holdout = training.filter(ee.Filter.lt('random',0.2))
+var train = training.filter(ee.Filter.gte('random',0.8))
+
+
+var classifier_acc = ee.Classifier.randomForest(30).train({
+  features: train, 
+  classProperty: 'landcover', 
+  inputProperties: bands,
+});
+
+
+var Accuracy = holdout.classify(classifier_acc)
+.errorMatrix('landcover','classification').accuracy()
+print('Accuracy L4',Accuracy)
+
+
+var confusionMatrix = holdout.classify(classifier_acc).errorMatrix('landcover', 'classification');
+print('confusionMatrix L4',confusionMatrix);
+
